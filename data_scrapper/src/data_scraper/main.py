@@ -133,9 +133,12 @@ def main():
                     
                     print(f"  🎬 Saving {unique_id}...")
                     try:
-                        uploader.upload_video(local_name, hf_path)
-                        uploader.upload_metadata(video_metadata, hf_path.replace(".mp4", ".json"))
-                        uploader.upload_text(caption, hf_path.replace(".mp4", ".txt"))
+                        uploader.upload_bundle(
+                            local_video_path=local_name,
+                            video_metadata=video_metadata,
+                            caption=caption,
+                            hf_video_path=hf_path
+                        )
                         # Update the local cache so other threads don't try to upload it
                         uploader.existing_files.add(hf_path)
                     except Exception as e:

@@ -1,4 +1,4 @@
-from huggingface_hub import HfApi
+from huggingface_hub import HfApi, CommitOperationAdd
 import os
 
 class HFUploader:
@@ -25,57 +25,35 @@ class HFUploader:
         """Check if a file exists in the cached list or on Hugging Face."""
         return hf_path in self.existing_files
 
-    def upload_video(self, local_path: str, hf_path: str, commit_message: str = "Add new video"):
-        import time
-        for attempt in range(3):
-            try:
-                self.api.upload_file(
-                    path_or_fileobj=local_path,
-                    path_in_repo=hf_path,
-                    repo_id=self.repo_id,
-                    repo_type="dataset",
-                    commit_message=commit_message
-                )
-                return
-            except Exception as e:
-                print(f"⚠️ HF Upload failed (attempt {attempt+1}): {e}")
-                time.sleep(10 * (attempt + 1))
-        raise Exception("Failed to upload video to HF after 3 attempts")
-
-    def upload_metadata(self, metadata: dict, hf_path: str):
+    def upload_bundle(self, local_video_path: str, video_metadata: dict, caption: str, hf_video_path: str):
+        """Upload video, metadata, and caption in ONE single commit to avoid rate limits."""
         import json
         import io
         import time
-        content = json.dumps(metadata, indent=2).encode("utf-8")
+        
+        v_id = os.path.basename(hf_video_path).split('.')[0]
+        json_content = json.dumps(video_metadata, indent=2).encode("utf-8")
+        
+        operations = [
+            CommitOperationAdd(path_in_repo=hf_video_path, path_or_fileobj=local_video_path),
+            CommitOperationAdd(path_in_repo=hf_video_path.replace(".mp4", ".json"), path_or_fileobj=io.BytesIO(json_content)),
+            CommitOperationAdd(path_in_repo=hf_video_path.replace(".mp4", ".txt"), path_or_fileobj=io.BytesIO(caption.encode("utf-8")))
+        ]
+        
         for attempt in range(3):
             try:
-                file_obj = io.BytesIO(content)
-                self.api.upload_file(
-                    path_or_fileobj=file_obj,
-                    path_in_repo=hf_path,
+                self.api.create_commit(
                     repo_id=self.repo_id,
-                    repo_type="dataset",
-                    commit_message=f"Add metadata for {hf_path}"
+                    operations=operations,
+                    commit_message=f"Add video bundle {v_id}",
+                    repo_type="dataset"
                 )
                 return
             except Exception as e:
-                print(f"⚠️ HF Metadata Upload failed: {e}")
-                time.sleep(5 * (attempt + 1))
-
-    def upload_text(self, text: str, hf_path: str):
-        import io
-        import time
-        for attempt in range(3):
-            try:
-                file_obj = io.BytesIO(text.encode("utf-8"))
-                self.api.upload_file(
-                    path_or_fileobj=file_obj,
-                    path_in_repo=hf_path,
-                    repo_id=self.repo_id,
-                    repo_type="dataset",
-                    commit_message=f"Add text file for {hf_path}"
-                )
-                return
-            except Exception as e:
-                print(f"⚠️ HF Text Upload failed: {e}")
-                time.sleep(5 * (attempt + 1))
+                print(f"⚠️ HF Bundle Upload failed (attempt {attempt+1}): {e}")
+                if "128 per hour" in str(e):
+                    print("🚨 CRITICAL: Commit limit hit. Throttling for 60s...")
+                    time.sleep(60)
+                else:
+                    time.sleep(10 * (attempt + 1))
+        raise Exception("Failed to upload bundle after 3 attempts")
