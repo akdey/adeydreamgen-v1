@@ -83,9 +83,9 @@ def main():
         if not best_link:
             return
 
-        # Filter by duration (3-15s)
+        # Filter by duration (minimum 3s to avoid broken clips, no maximum)
         duration = v.get('duration', 0)
-        if not (3 <= duration <= 15):
+        if duration < 3:
             return
             
         local_name = f"temp_videos/{v_id}_{source_name}.mp4"
@@ -98,6 +98,16 @@ def main():
                 hf_path = f"{orientation}/{v_id}.mp4"
                 
                 if not uploader.file_exists(hf_path):
+                    # 🛠️ DRAFT CAPTION: Create a readable sentence from tags/desc
+                    draft_desc = v.get("description", "").strip()
+                    tag_str = ", ".join(tags[:5])
+                    audio_note = " Includes original audio." if metadata.get("has_audio") else ""
+                    
+                    if draft_desc:
+                        caption = f"{draft_desc}. Highlights: {tag_str}.{audio_note}"
+                    else:
+                        caption = f"A video featuring {tag_str}.{audio_note}"
+
                     video_metadata = {
                         "v_id": v_id,
                         "source": source_name,
@@ -105,14 +115,16 @@ def main():
                         "duration": v.get("duration"),
                         "orientation": orientation,
                         "tags": tags,
-                        "description": v.get("description", ""),
+                        "description": draft_desc,
+                        "caption": caption, # Consolidated for Phase 2
                         "technical": metadata
                     }
                     
-                    print(f"  🎬 Saving {v_id} ({orientation}) from discovery ({source_name})...")
+                    print(f"  🎬 Saving {v_id} ({orientation}) with draft caption...")
                     try:
                         uploader.upload_video(local_name, hf_path)
                         uploader.upload_metadata(video_metadata, hf_path.replace(".mp4", ".json"))
+                        uploader.upload_text(caption, hf_path.replace(".mp4", ".txt"))
                     except Exception as e:
                         print(f"  Upload error: {e}")
             

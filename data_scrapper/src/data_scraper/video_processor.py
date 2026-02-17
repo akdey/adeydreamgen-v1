@@ -1,7 +1,8 @@
-from __future__ import annotations
 import cv2
 import os
 import requests
+import subprocess
+import json
 from typing import Tuple, Optional, Dict, Any
 
 class VideoProcessor:
@@ -20,6 +21,26 @@ class VideoProcessor:
         
         cap.release()
         
+        # Check for audio stream using ffprobe
+        has_audio = False
+        try:
+            cmd = [
+                'ffprobe', 
+                '-v', 'error', 
+                '-show_entries', 'stream=codec_type', 
+                '-of', 'json', 
+                filepath
+            ]
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            probe = json.loads(result.stdout)
+            for stream in probe.get('streams', []):
+                if stream.get('codec_type') == 'audio':
+                    has_audio = True
+                    break
+        except Exception:
+            # Fallback if ffprobe is missing or fails
+            has_audio = False
+
         aspect_ratio = width / height
         # 16:9 is ~1.77, 9:16 is ~0.56
         if 1.7 <= aspect_ratio <= 1.8:
@@ -34,7 +55,8 @@ class VideoProcessor:
             "height": height,
             "duration": duration,
             "orientation": orientation,
-            "fps": fps
+            "fps": fps,
+            "has_audio": has_audio
         }
 
     @staticmethod

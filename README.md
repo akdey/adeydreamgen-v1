@@ -13,9 +13,12 @@
 ## 🚀 The "WOW" Factors
 
 ### 🧠 1. Unbounded Recursive Discovery
-Unlike static scrapers, our **Scout Engine** uses recursive tag-walking. It extracts metadata from high-quality videos and uses discovered concepts to "branch out" into the long-tail of visual data autonomously. It doesn't just scrape; it *explores*.
+Unlike static scrapers, our **Scout Engine** uses recursive tag-walking. It extracts metadata from high-quality videos and uses discovered concepts to "branch out" into new categories autonomously every 6 hours. This ensures the model isn't just a "landscape generator" but a balanced visual world-model.
 
-### 🎨 2. 3-Stage Aesthetic Filtering (Phase 1.5)
+### 🎨 2. Audio-Visual Synchronization (Phase 1.8)
+Our ingestion pipeline now includes **Audio Stream Sensing**. It detects and logs the presence of original audio, allowing us to leverage these clips for future audio-to-video alignment training or sound effect generation.
+
+### 🏗️ 3. 3-Stage Aesthetic Filtering
 We don't train on noise. Our pipeline implements a rigorous quality gate:
 1.  **Technical Filter**: Resolution (1080p+), Aspect Ratio verification, and Temporal Stability.
 2.  **Semantic Mapping**: JSON-based metadata packaging for rich caption-to-video alignment.

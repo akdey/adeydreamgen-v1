@@ -43,3 +43,15 @@ class HFUploader:
             repo_type="dataset",
             commit_message=f"Add metadata for {hf_path}"
         )
+
+    def upload_text(self, text: str, hf_path: str):
+        """Upload a raw string as a .txt file to Hugging Face."""
+        import io
+        file_obj = io.BytesIO(text.encode("utf-8"))
+        self.api.upload_file(
+            path_or_fileobj=file_obj,
+            path_in_repo=hf_path,
+            repo_id=self.repo_id,
+            repo_type="dataset",
+            commit_message=f"Add text file for {hf_path}"
+        )

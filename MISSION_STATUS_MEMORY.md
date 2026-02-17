@@ -16,8 +16,9 @@ Building a High-Quality (8/10) Video Generation Model using 100% Free/Open-Sourc
 ## 🛠️ COMPLETED COMPONENTS
 - ✅ **Base Architecture**: Selection of Zeroscope v2 XL as the backbone.
 - ✅ **Smart Scraper v2**: Supported both Pexels and Pixabay with deduplication and 1080p+ quality filtering.
-- ✅ **Recursive Discovery Engine**: Implemented tag-based recursive searching to unbind the scraper from fixed categories, allowing for "viral" exploration of the stock libraries.
-- ✅ **Metadata-Rich Dataset**: Every video now uploads with a matching `.json` file containing tags, descriptions, and technical specs.
+- ✅ **Recursive Discovery Engine**: Implemented tag-based recursive searching to explore the stock libraries autonomously.
+- ✅ **Audio-Stream Sensing**: Integrated `ffprobe` to detect and log audio presence, preparing the foundation for audio-to-video alignment.
+- ✅ **Metadata-Rich Dataset**: Every video now uploads with `.json` and `.txt` files containing rich temporal and semantic data.
 - ✅ **Automation**: `.github/workflows/data_scrapper.yml` set to run every 6 hours with a parallel matrix.
 - ✅ **Verification**: `data_scrapper/src/scripts/verify_setup.py` created for API/Repo health checks.
 - ✅ **Git Setup**: Repo initialized as `VideoGenModel-akd-V1` and pushed to `akdey` on GitHub.
@@ -28,7 +29,7 @@ Building a High-Quality (8/10) Video Generation Model using 100% Free/Open-Sourc
 ## 📊 DATA STRATEGY (PHASE 1)
 - **Sources**: Pexels, Pixabay, and YouTube (via `yt-dlp`).
 - **Quality**: 1080p+, professionally shot, no watermarks.
-- **Filtering**: 3-15 seconds duration, automatic Landscape/Portrait categorization.
+- **Filtering**: Minimum 3s duration (no maximum) to capture short-form and long-form cinematic content.
 - **Target**: 2,000 - 5,000 highly curated cinematic clips.
 
 ---
