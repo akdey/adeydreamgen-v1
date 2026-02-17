@@ -14,6 +14,10 @@ from categories import CATEGORIES
 import random
 
 def main():
+    # 💤 STAGGERED START: Minimal delay to prevent millisecond-level collisions
+    startup_delay = random.randint(1, 10)
+    time.sleep(startup_delay)
+
     parser = argparse.ArgumentParser(description="ADeyDreamGen-v1 Data Scrapper")
     parser.add_argument("--query", type=str, help="Search query (specific)")
     parser.add_argument("--category_class", type=str, help="Category class from categories.py (e.g. human_activities)")

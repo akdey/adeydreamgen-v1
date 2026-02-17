@@ -26,39 +26,56 @@ class HFUploader:
         return hf_path in self.existing_files
 
     def upload_video(self, local_path: str, hf_path: str, commit_message: str = "Add new video"):
-        """Upload a video file to the Hugging Face dataset repo."""
-        self.api.upload_file(
-            path_or_fileobj=local_path,
-            path_in_repo=hf_path,
-            repo_id=self.repo_id,
-            repo_type="dataset",
-            commit_message=commit_message
-        )
+        import time
+        for attempt in range(3):
+            try:
+                self.api.upload_file(
+                    path_or_fileobj=local_path,
+                    path_in_repo=hf_path,
+                    repo_id=self.repo_id,
+                    repo_type="dataset",
+                    commit_message=commit_message
+                )
+                return
+            except Exception as e:
+                print(f"⚠️ HF Upload failed (attempt {attempt+1}): {e}")
+                time.sleep(10 * (attempt + 1))
+        raise Exception("Failed to upload video to HF after 3 attempts")
 
     def upload_metadata(self, metadata: dict, hf_path: str):
-        """Upload metadata as a JSON file to Hugging Face."""
         import json
         import io
-        
+        import time
         content = json.dumps(metadata, indent=2).encode("utf-8")
-        file_obj = io.BytesIO(content)
-        
-        self.api.upload_file(
-            path_or_fileobj=file_obj,
-            path_in_repo=hf_path,
-            repo_id=self.repo_id,
-            repo_type="dataset",
-            commit_message=f"Add metadata for {hf_path}"
-        )
+        for attempt in range(3):
+            try:
+                file_obj = io.BytesIO(content)
+                self.api.upload_file(
+                    path_or_fileobj=file_obj,
+                    path_in_repo=hf_path,
+                    repo_id=self.repo_id,
+                    repo_type="dataset",
+                    commit_message=f"Add metadata for {hf_path}"
+                )
+                return
+            except Exception as e:
+                print(f"⚠️ HF Metadata Upload failed: {e}")
+                time.sleep(5 * (attempt + 1))
 
     def upload_text(self, text: str, hf_path: str):
-        """Upload a raw string as a .txt file to Hugging Face."""
         import io
-        file_obj = io.BytesIO(text.encode("utf-8"))
-        self.api.upload_file(
-            path_or_fileobj=file_obj,
-            path_in_repo=hf_path,
-            repo_id=self.repo_id,
-            repo_type="dataset",
-            commit_message=f"Add text file for {hf_path}"
-        )
+        import time
+        for attempt in range(3):
+            try:
+                file_obj = io.BytesIO(text.encode("utf-8"))
+                self.api.upload_file(
+                    path_or_fileobj=file_obj,
+                    path_in_repo=hf_path,
+                    repo_id=self.repo_id,
+                    repo_type="dataset",
+                    commit_message=f"Add text file for {hf_path}"
+                )
+                return
+            except Exception as e:
+                print(f"⚠️ HF Text Upload failed: {e}")
+                time.sleep(5 * (attempt + 1))

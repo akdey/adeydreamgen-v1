@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        category_class: ["human_activities", "nature_and_wildlife", "urban_and_technology", "objects_and_textures", "cinematic_vibes", "special_fx", "emotions_and_concepts", "explorer"]
+        category_class: ["human_and_emotions", "nature_and_wildlife", "urban_tech_and_space", "objects_and_fx", "explorer"]
       fail-fast: false
 
     steps:

@@ -18,7 +18,13 @@ Unlike static scrapers, our **Scout Engine** uses recursive tag-walking. It extr
 ### 🎨 2. Audio-Visual Synchronization (Phase 1.8)
 Our ingestion pipeline now includes **Audio Stream Sensing**. It detects and logs the presence of original audio, allowing us to leverage these clips for future audio-to-video alignment training or sound effect generation.
 
-### 🏗️ 3. 3-Stage Aesthetic Filtering
+### 🛡️ 3. Smart Rate Limiting & Resilience
+Operating at scale requires finesse. Our pipeline implements:
+- **Staggered Startups**: Randomized delays for parallel GitHub jobs to prevent traffic spikes.
+- **Exponential Backoff**: Automatic retry logic with increasing wait times for 429 (Rate Limit) errors.
+- **Internal Throttling**: Randomized micro-sleeps between ingestion tasks to maintain a "Human-like" request pattern.
+
+### 🏗️ 4. 3-Stage Aesthetic Filtering
 We don't train on noise. Our pipeline implements a rigorous quality gate:
 1.  **Technical Filter**: Resolution (1080p+), Aspect Ratio verification, and Temporal Stability.
 2.  **Semantic Mapping**: JSON-based metadata packaging for rich caption-to-video alignment.
