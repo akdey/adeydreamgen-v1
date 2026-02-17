@@ -6,17 +6,24 @@ class HFUploader:
         self.repo_id = repo_id or os.getenv("HF_REPO_ID")
         self.token = token or os.getenv("HF_TOKEN")
         self.api = HfApi(token=self.token)
+        self.existing_files = set()
         
         if not self.repo_id:
             raise ValueError("HF_REPO_ID is required")
 
-    def file_exists(self, hf_path: str) -> bool:
-        """Check if a file exists in the Hugging Face repo."""
+    def cache_repo_files(self):
+        """Fetch all filenames from the repo once to avoid repeated API calls."""
         try:
+            print(f"📊 Caching file list from {self.repo_id}...")
             files = self.api.list_repo_files(repo_id=self.repo_id, repo_type="dataset")
-            return hf_path in files
-        except Exception:
-            return False
+            self.existing_files = set(files)
+            print(f"✅ Cached {len(self.existing_files)} existing files.")
+        except Exception as e:
+            print(f"⚠️ Could not cache files: {e}")
+
+    def file_exists(self, hf_path: str) -> bool:
+        """Check if a file exists in the cached list or on Hugging Face."""
+        return hf_path in self.existing_files
 
     def upload_video(self, local_path: str, hf_path: str, commit_message: str = "Add new video"):
         """Upload a video file to the Hugging Face dataset repo."""

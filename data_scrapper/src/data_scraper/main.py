@@ -38,6 +38,7 @@ def main():
     # Initialize components
     processor = VideoProcessor()
     uploader = HFUploader()
+    uploader.cache_repo_files() # Fetch list once to avoid repeated API calls
     
     # Optional Clients
     clients = []
@@ -60,14 +61,20 @@ def main():
     os.makedirs("temp_videos", exist_ok=True)
     
     collected_tags = set()
+    session_handled_ids = set()
     
     def process_single_video(v, client, source_name, recurse=True):
         v_id = v['id']
+        unique_id = f"{source_name}_{v_id}"
+
+        if unique_id in session_handled_ids:
+            return
+        session_handled_ids.add(unique_id)
         
-        # 🧪 TAG DISCOVERY: Extract tags for broader exploration
+        # 🧪 TAG DISCOVERY
         tags = v.get("tags") if isinstance(v.get("tags"), list) else []
         if tags and recurse:
-            for t in tags[:3]: # Grab first 3 tags to avoid explosion
+            for t in tags[:3]:
                 collected_tags.add(t)
 
         # Link extraction
@@ -83,22 +90,22 @@ def main():
         if not best_link:
             return
 
-        # Filter by duration (minimum 3s to avoid broken clips, no maximum)
         duration = v.get('duration', 0)
         if duration < 3:
             return
             
-        local_name = f"temp_videos/{v_id}_{source_name}.mp4"
+        local_name = f"temp_videos/{unique_id}.mp4"
         
         if processor.download_video(best_link, local_name):
             metadata = processor.get_video_metadata(local_name)
             orientation = metadata.get('orientation', 'other')
             
             if orientation in ['landscape', 'portrait']:
-                hf_path = f"{orientation}/{v_id}.mp4"
+                # Deduplication check using CACHED file list
+                hf_path = f"{orientation}/{unique_id}.mp4"
                 
                 if not uploader.file_exists(hf_path):
-                    # 🛠️ DRAFT CAPTION: Create a readable sentence from tags/desc
+                    # 🛠️ DRAFT CAPTION
                     draft_desc = v.get("description", "").strip()
                     tag_str = ", ".join(tags[:5])
                     audio_note = " Includes original audio." if metadata.get("has_audio") else ""
@@ -116,15 +123,17 @@ def main():
                         "orientation": orientation,
                         "tags": tags,
                         "description": draft_desc,
-                        "caption": caption, # Consolidated for Phase 2
+                        "caption": caption,
                         "technical": metadata
                     }
                     
-                    print(f"  🎬 Saving {v_id} ({orientation}) with draft caption...")
+                    print(f"  🎬 Saving {unique_id}...")
                     try:
                         uploader.upload_video(local_name, hf_path)
                         uploader.upload_metadata(video_metadata, hf_path.replace(".mp4", ".json"))
                         uploader.upload_text(caption, hf_path.replace(".mp4", ".txt"))
+                        # Update the local cache so other threads don't try to upload it
+                        uploader.existing_files.add(hf_path)
                     except Exception as e:
                         print(f"  Upload error: {e}")
             

@@ -19,7 +19,8 @@ Building a High-Quality (8/10) Video Generation Model using 100% Free/Open-Sourc
 - ✅ **Recursive Discovery Engine**: Implemented tag-based recursive searching to explore the stock libraries autonomously.
 - ✅ **Audio-Stream Sensing**: Integrated `ffprobe` to detect and log audio presence, preparing the foundation for audio-to-video alignment.
 - ✅ **Metadata-Rich Dataset**: Every video now uploads with `.json` and `.txt` files containing rich temporal and semantic data.
-- ✅ **Automation**: `.github/workflows/data_scrapper.yml` set to run every 6 hours with a parallel matrix.
+- ✅ **Automation**: `.github/workflows/data_scrapper.yml` set to run every 2 hours with a parallel matrix.
+- ✅ **Optimized Deduplication**: Implemented repository-wide caching and session tracking to prevent redundant downloads and API collisions.
 - ✅ **Verification**: `data_scrapper/src/scripts/verify_setup.py` created for API/Repo health checks.
 - ✅ **Git Setup**: Repo initialized as `VideoGenModel-akd-V1` and pushed to `akdey` on GitHub.
 - ✅ **Professional Portfolio README**: Created a high-impact root README.md to showcase "WOW" factors (Recursive Discovery, Aesthetic Filtering) for GitHub visitors.
