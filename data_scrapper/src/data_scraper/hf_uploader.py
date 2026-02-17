@@ -27,3 +27,19 @@ class HFUploader:
             repo_type="dataset",
             commit_message=commit_message
         )
+
+    def upload_metadata(self, metadata: dict, hf_path: str):
+        """Upload metadata as a JSON file to Hugging Face."""
+        import json
+        import io
+        
+        content = json.dumps(metadata, indent=2).encode("utf-8")
+        file_obj = io.BytesIO(content)
+        
+        self.api.upload_file(
+            path_or_fileobj=file_obj,
+            path_in_repo=hf_path,
+            repo_id=self.repo_id,
+            repo_type="dataset",
+            commit_message=f"Add metadata for {hf_path}"
+        )

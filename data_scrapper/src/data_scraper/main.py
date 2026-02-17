@@ -10,14 +10,29 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+from categories import CATEGORIES
+import random
+
 def main():
     parser = argparse.ArgumentParser(description="ADeyDreamGen-v1 Data Scrapper")
-    parser.add_argument("--query", type=str, help="Search query (e.g. cinematic, drone)")
+    parser.add_argument("--query", type=str, help="Search query (specific)")
+    parser.add_argument("--category_class", type=str, help="Category class from categories.py (e.g. human_activities)")
     parser.add_argument("--items", type=int, default=15, help="Number of items to fetch per source")
     args = parser.parse_args()
 
-    # Configuration
-    QUERIES = [args.query] if args.query else ["cinematic", "nature", "drone", "travel", "cityscape", "ocean", "mountain", "forest"]
+    # Determine Queries
+    if args.query:
+        QUERIES = [args.query]
+    elif args.category_class and args.category_class in CATEGORIES:
+        # Pick 3 random sub-categories from that class to ensure variety
+        QUERIES = random.sample(CATEGORIES[args.category_class], min(3, len(CATEGORIES[args.category_class])))
+        print(f"🎲 Randomized class search for [{args.category_class}]: {QUERIES}")
+    else:
+        # Pick 5 random categories from the entire library
+        all_cats = [item for sublist in CATEGORIES.values() for item in sublist]
+        QUERIES = random.sample(all_cats, 5)
+        print(f"🎲 Total Random exploration: {QUERIES}")
+
     ITEMS_PER_QUERY = args.items
     
     # Initialize components
@@ -44,16 +59,24 @@ def main():
 
     os.makedirs("temp_videos", exist_ok=True)
     
-    def process_single_video(v, client, source_name):
+    collected_tags = set()
+    
+    def process_single_video(v, client, source_name, recurse=True):
         v_id = v['id']
+        
+        # 🧪 TAG DISCOVERY: Extract tags for broader exploration
+        tags = v.get("tags") if isinstance(v.get("tags"), list) else []
+        if tags and recurse:
+            for t in tags[:3]: # Grab first 3 tags to avoid explosion
+                collected_tags.add(t)
+
         # Link extraction
         if isinstance(client, PexelsClient):
-            best_file = None
+            best_link = v.get('video_files', [{}])[0].get('link')
             for f in v.get('video_files', []):
                 if f['width'] >= 1920 or f['height'] >= 1920:
-                    best_file = f
+                    best_link = f['link']
                     break
-            best_link = best_file['link'] if best_file else v.get('video_files', [{}])[0].get('link')
         else: # Pixabay
             best_link = client.get_best_video_link(v)
         
@@ -63,12 +86,10 @@ def main():
         # Filter by duration (3-15s)
         duration = v.get('duration', 0)
         if not (3 <= duration <= 15):
-            print(f"  Skipping {v_id}: duration {duration}s not in range")
             return
             
         local_name = f"temp_videos/{v_id}_{source_name}.mp4"
         
-        print(f"  Downloading {v_id} from {source_name}...")
         if processor.download_video(best_link, local_name):
             metadata = processor.get_video_metadata(local_name)
             orientation = metadata.get('orientation', 'other')
@@ -76,33 +97,56 @@ def main():
             if orientation in ['landscape', 'portrait']:
                 hf_path = f"{orientation}/{v_id}.mp4"
                 
-                if uploader.file_exists(hf_path):
-                    print(f"  Skipping {v_id}: already exists in HF repo.")
-                else:
-                    print(f"  Uploading {v_id} as {orientation}...")
+                if not uploader.file_exists(hf_path):
+                    video_metadata = {
+                        "v_id": v_id,
+                        "source": source_name,
+                        "url": best_link,
+                        "duration": v.get("duration"),
+                        "orientation": orientation,
+                        "tags": tags,
+                        "description": v.get("description", ""),
+                        "technical": metadata
+                    }
+                    
+                    print(f"  🎬 Saving {v_id} ({orientation}) from discovery ({source_name})...")
                     try:
-                        uploader.upload_video(local_name, hf_path, commit_message=f"Add {orientation} video {v_id} from {source_name}")
+                        uploader.upload_video(local_name, hf_path)
+                        uploader.upload_metadata(video_metadata, hf_path.replace(".mp4", ".json"))
                     except Exception as e:
-                        print(f"  Upload failed for {v_id}: {e}")
-            else:
-                print(f"  Skipping {v_id}: orientation {orientation} not supported")
+                        print(f"  Upload error: {e}")
             
-            # Cleanup
             if os.path.exists(local_name):
                 os.remove(local_name)
 
     # Use ThreadPool to process videos in parallel
     with ThreadPoolExecutor(max_workers=4) as executor:
+        # 1. INITIAL SEED SEARCH
         for query in QUERIES:
-            print(f"\n--- Searching for: {query} ---")
+            print(f"\n--- Initial Seed: {query} ---")
             for client in clients:
                 source_name = client.__class__.__name__
                 try:
                     videos = client.search_videos(query, per_page=ITEMS_PER_QUERY)
                     for v in videos:
-                        executor.submit(process_single_video, v, client, source_name)
+                        executor.submit(process_single_video, v, client, source_name, True)
                 except Exception as e:
                     print(f"Failed to search {source_name}: {e}")
+
+        # 2. DISCOVERY LOOP: Search for tags found during seeds
+        # We wait a moment for seeds to populate collected_tags
+        time.sleep(5)
+        discovery_queries = list(collected_tags)[:10] # limit discovery depth
+        print(f"\n🚀 DISCOVERY MODE: Found {len(collected_tags)} tags. Exploring: {discovery_queries}")
+        
+        for query in discovery_queries:
+            for client in clients:
+                source_name = client.__class__.__name__
+                try:
+                    videos = client.search_videos(query, per_page=5)
+                    for v in videos:
+                        executor.submit(process_single_video, v, client, source_name, False)
+                except:
                     continue
 
 if __name__ == "__main__":

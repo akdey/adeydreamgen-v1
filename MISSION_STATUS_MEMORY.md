@@ -16,7 +16,9 @@ Building a High-Quality (8/10) Video Generation Model using 100% Free/Open-Sourc
 ## 🛠️ COMPLETED COMPONENTS
 - ✅ **Base Architecture**: Selection of Zeroscope v2 XL as the backbone.
 - ✅ **Smart Scraper v2**: Supported both Pexels and Pixabay with deduplication and 1080p+ quality filtering.
-- ✅ **Automation**: `.github/workflows/data_scrapper.yml` set to run every 6 hours.
+- ✅ **Recursive Discovery Engine**: Implemented tag-based recursive searching to unbind the scraper from fixed categories, allowing for "viral" exploration of the stock libraries.
+- ✅ **Metadata-Rich Dataset**: Every video now uploads with a matching `.json` file containing tags, descriptions, and technical specs.
+- ✅ **Automation**: `.github/workflows/data_scrapper.yml` set to run every 6 hours with a parallel matrix.
 - ✅ **Verification**: `data_scrapper/src/scripts/verify_setup.py` created for API/Repo health checks.
 - ✅ **Git Setup**: Repo initialized as `VideoGenModel-akd-V1` and pushed to `akdey` on GitHub.
 
@@ -59,6 +61,7 @@ Building a High-Quality (8/10) Video Generation Model using 100% Free/Open-Sourc
   - Renamed project to **ADeyDreamGen-v1**.
   - Fixed GitHub Actions issue: replaced obsolete `libgl1-mesa-glx` with `libgl1`.
   - Modernized Python typing using `dict`, `list`, and `any` for Python 3.10 compatibility to resolve `NameError`.
+  - Fixed GitHub Actions syntax: restored missing `runs-on` property in the parallel matrix workflow.
   - Discussion on W&B (Weights & Biases) for training monitoring.
   - Discussion on 8/10 quality target via 3-stage filtering (Resolution -> Temporal -> AI Aesthetic Scoring).
 
