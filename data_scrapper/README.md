@@ -3,7 +3,10 @@
 This module handles the automated collection of high-quality, royalty-free video data for the VideoGen project.
 
 ## Features
-- **Pexels Integration**: Searches and fetches videos based on curated queries.
+- **Multi-Source Integration**: 
+  - **Pexels API**: Professional royalty-free clips.
+  - **Pixabay API**: High-quality film/cinematic clips.
+  - **YouTube (Curated)**: *Upcoming* support for high-quality drone/nature channels using `yt-dlp`.
 - **Smart Filtering**: 
   - Resolution: 1080p+ preferred.
   - Duration: 3-15 seconds.
