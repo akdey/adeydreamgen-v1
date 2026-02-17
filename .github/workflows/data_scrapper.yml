@@ -7,7 +7,11 @@ on:
 
 jobs:
   scrape:
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        category: ["cinematic", "nature", "drone", "travel", "cityscape", "ocean", "mountain", "forest"]
+      fail-fast: false # Don't stop other jobs if one fails
+
     steps:
       - name: Checkout Code
         uses: actions/checkout@v3
@@ -23,9 +27,10 @@ jobs:
           # For OpenCV in headless environments
           sudo apt-get update && sudo apt-get install -y libgl1
 
-      - name: Run Scraper
+      - name: Run Scraper (${{ matrix.category }})
         env:
           PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+          PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           HF_REPO_ID: ${{ secrets.HF_REPO_ID }}
-        run: python data_scrapper/src/data_scraper/main.py
+        run: python data_scrapper/src/data_scraper/main.py --query "${{ matrix.category }}" --items 25
