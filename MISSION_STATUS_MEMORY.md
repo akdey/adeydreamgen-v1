@@ -21,6 +21,7 @@ Building a High-Quality (8/10) Video Generation Model using 100% Free/Open-Sourc
 - ✅ **Automation**: `.github/workflows/data_scrapper.yml` set to run every 6 hours with a parallel matrix.
 - ✅ **Verification**: `data_scrapper/src/scripts/verify_setup.py` created for API/Repo health checks.
 - ✅ **Git Setup**: Repo initialized as `VideoGenModel-akd-V1` and pushed to `akdey` on GitHub.
+- ✅ **Professional Portfolio README**: Created a high-impact root README.md to showcase "WOW" factors (Recursive Discovery, Aesthetic Filtering) for GitHub visitors.
 
 ---
 
