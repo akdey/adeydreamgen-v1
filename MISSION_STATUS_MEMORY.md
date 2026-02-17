@@ -57,6 +57,7 @@ Building a High-Quality (8/10) Video Generation Model using 100% Free/Open-Sourc
 - **2026-02-18**: 
   - Segregated project into `data_scrapper`, `training`, and `evaluation` modules.
   - Renamed project to **ADeyDreamGen-v1**.
+  - Fixed GitHub Actions issue: replaced obsolete `libgl1-mesa-glx` with `libgl1`.
   - Discussion on W&B (Weights & Biases) for training monitoring.
   - Discussion on 8/10 quality target via 3-stage filtering (Resolution -> Temporal -> AI Aesthetic Scoring).
 

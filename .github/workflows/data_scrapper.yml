@@ -20,8 +20,8 @@ jobs:
       - name: Install Dependencies
         run: |
           pip install -r data_scrapper/requirements.txt
-          # For OpenCV headless in docker
-          sudo apt-get update && sudo apt-get install -y libgl1-mesa-glx
+          # For OpenCV in headless environments
+          sudo apt-get update && sudo apt-get install -y libgl1
 
       - name: Run Scraper
         env:
