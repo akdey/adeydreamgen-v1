@@ -1,3 +1,4 @@
+from __future__ import annotations
 import cv2
 import os
 import requests
@@ -5,7 +6,7 @@ from typing import Tuple, Optional, Dict, Any
 
 class VideoProcessor:
     @staticmethod
-    def get_video_metadata(filepath: str) -> Dict[str, Any]:
+    def get_video_metadata(filepath: str) -> dict[str, any]:
         """Extract metadata from a video file using OpenCV."""
         cap = cv2.VideoCapture(filepath)
         if not cap.isOpened():

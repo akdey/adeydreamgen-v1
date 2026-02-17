@@ -11,7 +11,7 @@ class PexelsClient:
             raise ValueError("PEXELS_API_KEY is required")
         self.headers = {"Authorization": self.api_key}
 
-    def search_videos(self, query: str, per_page: int = 15, page: int = 1) -> List[Dict[str, Any]]:
+    def search_videos(self, query: str, per_page: int = 15, page: int = 1) -> list[dict[str, any]]:
         """Search for videos on Pexels."""
         url = f"{self.BASE_URL}/search"
         params = {
@@ -25,6 +25,6 @@ class PexelsClient:
         response.raise_for_status()
         return response.json().get("videos", [])
 
-    def get_video_files(self, video_data: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def get_video_files(self, video_data: dict[str, any]) -> list[dict[str, any]]:
         """Extract high quality video files from video data."""
         return video_data.get("video_files", [])

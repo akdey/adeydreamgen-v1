@@ -10,7 +10,7 @@ class PixabayClient:
         if not self.api_key:
             raise ValueError("PIXABAY_API_KEY is required")
 
-    def search_videos(self, query: str, per_page: int = 15, page: int = 1) -> List[Dict[str, Any]]:
+    def search_videos(self, query: str, per_page: int = 15, page: int = 1) -> list[dict[str, any]]:
         """Search for videos on Pixabay."""
         params = {
             "key": self.api_key,
@@ -25,7 +25,7 @@ class PixabayClient:
         response.raise_for_status()
         return response.json().get("hits", [])
 
-    def get_best_video_link(self, video_data: Dict[str, Any]) -> str:
+    def get_best_video_link(self, video_data: dict[str, any]) -> str:
         """Extract the best quality video link from Pixabay hit."""
         videos = video_data.get("videos", {})
         # Pixabay provides 'large', 'medium', 'small', 'tiny'
