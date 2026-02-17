@@ -1,7 +1,7 @@
 import cv2
 import os
 import requests
-from typing import Tuple, Optional
+from typing import Tuple, Optional, Dict, Any
 
 class VideoProcessor:
     @staticmethod
