@@ -611,22 +611,47 @@ def push_to_hub(config, checkpoint_path="best"):
 
 
 # ============================================================
-# 7. MAIN
+# 7. MAIN (Refactored for Memory Safety)
 # ============================================================
 def main():
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--mode", type=str, default="all", choices=["all", "caption", "train"], help="Run 'caption' first, then 'train' in separate internal calls")
+    args = parser.parse_args()
+    
     print("=" * 60)
-    print("🔥 ADeyDreamGen-v1 — Fine-Tuning Pipeline")
+    print(f"🔥 ADeyDreamGen-v1 — Mode: {args.mode.upper()}")
     print("=" * 60)
     
-    # Step 1: Train
-    train(CONFIG)
-    
-    # Step 2: Generate comparison videos
-    generate_comparison(CONFIG, checkpoint_path="best")
-    
-    # Step 3: Push to Hub (if configured)
-    if config.get("push_to_hub", False):
-        push_to_hub(CONFIG, checkpoint_path="best")
+    if args.mode == "caption":
+        # ONLY Download & Caption
+        print("🧠 Running Phase 2: Captioning Only...")
+        pairs = load_training_data(CONFIG)
+        
+        # Download & Caption
+        dataset = VideoDataset(pairs, CONFIG) # This triggers download & captioning
+        print("✅ Captioning complete. Metadata saved in cache.")
+        
+    elif args.mode == "train":
+        # ONLY Train (Assume data is ready)
+        print("🏋️ Running Phase 3: Training Only...")
+        # Disable captioning for this run since it's already done
+        CONFIG["use_ai_captioning"] = False 
+        train(CONFIG)
+        
+        # Step 2: Comparison
+        generate_comparison(CONFIG, checkpoint_path="best")
+        
+        # Step 3: Push
+        if CONFIG.get("push_to_hub", False):
+            push_to_hub(CONFIG, checkpoint_path="best")
+            
+    else:
+        # Default: Try to run everything (May OOM)
+        train(CONFIG)
+        generate_comparison(CONFIG, checkpoint_path="best")
+        if CONFIG.get("push_to_hub", False):
+            push_to_hub(CONFIG, checkpoint_path="best")
 
 if __name__ == "__main__":
     main()
