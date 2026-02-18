@@ -315,10 +315,17 @@ def setup_training(config):
         torch_dtype=torch.float16,
     )
     
-    # Extract the UNet (the core model we fine-tune)
+    # Extract the UNet
     unet = pipe.unet
     
-    # Apply LoRA to temporal layers only
+    # 📉 VRAM OPTIMIZATION: XFormers (Critical for T4)
+    try:
+        pipe.enable_xformers_memory_efficient_attention()
+        print("✅ xformers efficient attention enabled")
+    except Exception as e:
+        print(f"⚠️ xformers not available: {e}")
+        # Fallback: Slicing (slower but saves memory)
+        pipe.enable_attention_slicing()
     lora_config = LoraConfig(
         r=config["lora_rank"],
         lora_alpha=config["lora_alpha"],
