@@ -1,0 +1,18 @@
+# Core Stack (Golden Ratio for T4 Training)
+# Base PyTorch for CUDA 12.1
+torch==2.1.2 
+torchvision==0.16.2
+torchaudio==2.1.2
+# Core Libraries
+diffusers==0.27.0
+transformers==4.39.0
+accelerate==0.28.0
+peft==0.10.0
+huggingface_hub==0.23.0  # Critical for cached_download support
+# Utilities
+imageio[ffmpeg]
+safetensors
+wandb
+xformers
+bitsandbytes
+opencv-python-headless

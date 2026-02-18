@@ -8,11 +8,6 @@ on:
 jobs:
   scrape:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        category_class: ["human_and_emotions", "nature_and_wildlife", "urban_tech_and_space", "objects_and_fx", "explorer"]
-      fail-fast: false
-
     steps:
       - name: Checkout Code
         uses: actions/checkout@v3
@@ -23,15 +18,13 @@ jobs:
           python-version: '3.10'
 
       - name: Install Dependencies
-        run: |
-          pip install -r data_scrapper/requirements.txt
-          # For OpenCV in headless environments
-          sudo apt-get update && sudo apt-get install -y libgl1
-
-      - name: Run Scraper (${{ matrix.category_class }})
+        run: pip install -r 01_data_collection/requirements.txt
+          
+      - name: Run Scraper
         env:
           PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
           PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           HF_REPO_ID: ${{ secrets.HF_REPO_ID }}
-        run: python data_scrapper/src/data_scraper/main.py --category_class "${{ matrix.category_class }}" --items 25
+        run: python scraper.py
+        working-directory: ./01_data_collection

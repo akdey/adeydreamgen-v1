@@ -1,77 +1,77 @@
-# 🌌 ADeyDreamGen-v1 (Project: AMIT-VIDEO)
+# 🎬 ADeyDreamGen-v1 (Open Source Video Model)
 
-> **Building a High-Fidelity (8/10) Open-Source Video Generation Model.**
+This project is a complete pipeline for training cinematic text-to-video models on consumer hardware (T4 GPU). 
+The goal: **Democratize high-quality video generation.**
 
-[![Scraping Automation](https://github.com/akdey/adeydreamgen-v1/actions/workflows/data_scrapper.yml/badge.svg)](https://github.com/akdey/adeydreamgen-v1/actions/workflows/data_scrapper.yml)
-[![Dataset](https://img.shields.io/badge/HuggingFace-Dataset-orange)](https://huggingface.co/datasets/a-k-dey/akd-video-training-dataset)
-[![Model](https://img.shields.io/badge/HuggingFace-Model-yellow)](https://huggingface.co/models/a-k-dey/akd-video-v1)
-
-**ADeyDreamGen-v1** is an ambitious project to push the boundaries of open-source video generation. By leveraging a custom-built, autonomous ingestion pipeline and the Zeroscope v2 XL spine, we are creating a model optimized for both **Cinematic Landscape (16:9)** and **Viral Portrait (9:16)** content.
+Most papers use A100 clusters. This repo is optimized for the rest of us. 
+It includes a smart scraper, a vision-captioning bot, and a highly-optimized training script that fits 1.7B parameters into 15GB VRAM.
 
 ---
 
-## 🚀 The "WOW" Factors
+## 🧭 The Explorer Bot (`01_data_collection`)
+I didn't want a static dataset. I wanted diversity.
+The scraper isn't just a downloader—it's an **Explorer**.
 
-### 🧠 1. Unbounded Recursive Discovery
-Unlike static scrapers, our **Scout Engine** uses recursive tag-walking. It extracts metadata from high-quality videos and uses discovered concepts to "branch out" into new categories autonomously every 6 hours. This ensures the model isn't just a "landscape generator" but a balanced visual world-model.
+1.  It starts with a seed (e.g., "cinematic mist").
+2.  It downloads the best videos.
+3.  **It reads the tags.** If a video is tagged with "witcher", the *next* run will search for "witcher".
+4.  This creates an organic, ever-expanding dataset ("Forest" → "Mist" → "Dark Fantasy" → "Medieval"...).
 
-### 🎨 2. Audio-Visual Synchronization (Phase 1.8)
-Our ingestion pipeline now includes **Audio Stream Sensing**. It detects and logs the presence of original audio, allowing us to leverage these clips for future audio-to-video alignment training or sound effect generation.
-
-### 🛡️ 3. Smart Rate Limiting & Resilience
-Operating at scale requires finesse. Our pipeline implements:
-- **Staggered Startups**: Randomized delays for parallel GitHub jobs to prevent traffic spikes.
-- **Exponential Backoff**: Automatic retry logic with increasing wait times for 429 (Rate Limit) errors.
-- **Internal Throttling**: Randomized micro-sleeps between ingestion tasks to maintain a "Human-like" request pattern.
-
-### 🏗️ 4. 3-Stage Aesthetic Filtering
-We don't train on noise. Our pipeline implements a rigorous quality gate:
-1.  **Technical Filter**: Resolution (1080p+), Aspect Ratio verification, and Temporal Stability.
-2.  **Semantic Mapping**: JSON-based metadata packaging for rich caption-to-video alignment.
-3.  **Aesthetic Scoring**: Future integration of CLIP-based scoring to select only the top 1% of most "cinematic" frames for fine-tuning.
-
-### 🏗️ 3. Temporal Mastery Fine-Tuning
-Using a specialized training regime on **Kaggle's T4/P100 infrastructure**, we are fine-tuning the temporal layers of Zeroscope. This focuses specifically on smoothing high-motion scenes like drone shots, fluid dynamics, and human activities.
+**To run it:**
+```bash
+python 01_data_collection/scraper.py
+```
+It runs every 3 hours via GitHub Actions to keep the dataset fresh.
 
 ---
 
-## 🛠️ Tech Stack & Infrastructure
+## 🧠 The Vision Brain (`02_captioning`)
+Raw metadata sucks. "Forest, 4k" teaches the model nothing.
+I use **BLIP-2** (a vision-language model) to watch the videos and write proper descriptions:
+> *"A cinematic drone shot flying through a misty pine forest at sunrise, god rays piercing through the trees."*
 
-- **Core Intelligence**: Zeroscope v2 XL (Spine)
-- **Ingestion**: Multi-threaded Python Scraper (Pexels + Pixabay APIs)
-- **Orchestration**: GitHub Actions (8-Way Parallel Matrix)
-- **Storage**: Hugging Face Datasets (LFS for high-bitrate MP4s)
-- **Compute**: Kaggle GPU (Phase 2 Training)
-
----
-
-## 📈 Roadmap
-
-- [x] **Phase 1: The Great Harvesting** – Modular scraper with dual-source ingestion.
-- [x] **Phase 1.1: Parallelization** – Matrix-based GitHub automation (32x concurrent threads).
-- [x] **Phase 1.2: Recursive Exploration** – Unbounded tag-based discovery.
-- [x] **Phase 1.3: Atomic Batching** – Single-commit uploads to avoid HF rate limits.
-- [ ] **Phase 2: The Vision Brain** – AI-driven hyper-descriptive captioning (LLaVA-1.5).
-- [x] **Phase 3: The Forge (Setup)** – Temporal LoRA fine-tuning pipeline on Kaggle.
-- [ ] **Phase 3.1: The Forge (Training)** – First fine-tuning run with 500+ curated clips.
-- [ ] **Phase 4: The Generation** – Deployment of the ADeyDreamGen-v1 model.
+Run this separately on a GPU to "upgrade" your dataset before training.
 
 ---
 
-## 📂 Project Structure
+## 🏋️ The Training (`03_training`)
+This is the hard part. Fitting Zeroscope XL on a T4 GPU.
+I had to use every trick in the book:
+- **8-bit AdamW Optimizer** (cuts VRAM usage in half)
+- **CPU Offloading** (Text Encoder never touches GPU)
+- **VAE Slicing** (Encodes video in tiny chunks)
+- **16 Frames @ 256p** (The absolute limit for a T4)
 
-```text
-├── .github/workflows/    # Parallel Matrix Automation
-├── data_scrapper/        # The Scout Engine (Python)
-│   ├── src/data_scraper/ # Core Logic (Clients, Processors, Multi-threading)
-│   └── categories.py     # Global Class Definitions
-├── training/             # Kaggle Fine-tuning Notebooks (Planned)
-└── evaluation/           # Quality Metric Scripts (FVD, CLIP Score)
+It works. You can fine-tune a state-of-the-art video model for free on Kaggle.
+
+**To train:**
+1. Open `03_training/train_model.py` in Kaggle.
+2. Add your HF_TOKEN.
+3. Hit Run.
+
+---
+
+## 🔓 Unlock High Quality (Rich Mode)
+If you have an A100 (40GB+ VRAM), you can train the **Real Deal** (576x320 Cinematic).
+Just update `03_training/train_model.py`:
+```python
+CONFIG = {
+    "resolution": 576,        # T4 can't handle this
+    "num_frames": 24,         # Smoother motion
+    "train_batch_size": 2,    
+    "use_ai_captioning": True # Enable the Vision Brain
+}
 ```
 
 ---
 
-## 🤝 Stay Tuned
-This project is under active development. My mission is to prove that high-quality generative video is achievable through smart engineering and open-source synergy.
+## 🚀 Deployment (`05_deployment`)
+The final app is a Gradio interface. It runs on CPU or GPU and uses **LoRA weights** to inject your trained style into the base model.
+Upload the folder to Hugging Face Spaces to share it with the world.
 
-*Designed & Engineered by [A.K. Dey](https://github.com/akdey)*
+---
+
+### Credits
+Built with ❤️ and most of the help with ai tools, coffee, and a lot of OutOfMemory errors.
+- **Base Model**: Zeroscope v2 XL
+- **Tech Stack**: Diffusers, PyTorch, PEFT (LoRA)

@@ -149,80 +149,6 @@ def extract_frames_from_video(video_path, num_frames, resolution):
     return np.stack(frames)  # (num_frames, H, W, 3)
 
 
-def caption_videos_with_blip(pairs, config):
-    """
-    PHASE 2: The Vision Brain
-    Use a VLM (BLIP-2 or similar) to generate dense, descriptive captions
-    for each video before training. This significantly improves prompt adherence.
-    """
-    from transformers import Blip2Processor, Blip2ForConditionalGeneration
-    from PIL import Image
-    import cv2
-    import numpy as np
-    
-    print("\n" + "=" * 40)
-    print("🧠 PHASE 2: VISION BRAIN ACTIVATED")
-    print("=" * 40)
-    print("   Loading BLIP-2 for automated captioning...")
-    
-    # Load BLIP-2 (Lightweight optic-2.7b fits on T4)
-    processor = Blip2Processor.from_pretrained("Salesforce/blip2-opt-2.7b")
-    model = Blip2ForConditionalGeneration.from_pretrained(
-        "Salesforce/blip2-opt-2.7b", 
-        torch_dtype=torch.float16,
-        device_map="auto"
-    )
-    
-    new_pairs = []
-    
-    print(f"   Captioning {len(pairs)} videos...")
-    for i, pair in enumerate(pairs):
-        try:
-            # 1. Extract the middle frame
-            cap = cv2.VideoCapture(pair["video"])
-            total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-            cap.set(cv2.CAP_PROP_POS_FRAMES, total_frames // 2)
-            ret, frame = cap.read()
-            cap.release()
-            
-            if not ret:
-                continue
-                
-            # Convert to PIL
-            image = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
-            
-            # 2. Generate Caption
-            inputs = processor(images=image, text="a cinematic shot of", return_tensors="pt").to("cuda", torch.float16)
-            generated_ids = model.generate(**inputs, max_new_tokens=50)
-            caption = processor.batch_decode(generated_ids, skip_special_tokens=True)[0].strip()
-            
-            # Clean up caption
-            if not caption.startswith("a cinematic shot of"):
-                caption = "a cinematic shot of " + caption
-            
-            # 3. Store new caption
-            pair["caption_text"] = caption
-            new_pairs.append(pair)
-            
-            if i % 5 == 0:
-                print(f"   [{i}/{len(pairs)}] Generated: {caption}")
-                
-        except Exception as e:
-            print(f"   ⚠️ Failed to caption {pair['video']}: {e}")
-            # Fallback to original text file if BLIP fails
-            with open(pair["caption"], "r") as f:
-                pair["caption_text"] = f.read().strip()
-            new_pairs.append(pair)
-            
-    # Free VRAM explicitly
-    del model, processor        
-    torch.cuda.empty_cache()
-    import gc
-    gc.collect()
-    print("🧠 Vision Brain unloaded. Memory cleared.")
-    
-    return new_pairs
-
 class VideoDataset(torch.utils.data.Dataset):
     """PyTorch Dataset for video-caption pairs."""
     
@@ -247,20 +173,16 @@ class VideoDataset(torch.utils.data.Dataset):
                     cache_dir=self.cache_dir
                 )
                 
-                # Check if we already computed caption in Phase 2
-                if "caption_text" in p:
-                    caption_content = p["caption_text"]
-                else:
-                    # Fallback to downloading text file
-                    caption_path = hf_hub_download(
-                        repo_id=config["dataset_repo"],
-                        filename=p["caption"],
-                        repo_type="dataset",
-                        cache_dir=self.cache_dir
-                    )
-                    with open(caption_path, "r") as f:
-                        caption_content = f.read().strip()
-                
+                # Download Caption
+                caption_path = hf_hub_download(
+                    repo_id=config["dataset_repo"],
+                    filename=p["caption"],
+                    repo_type="dataset",
+                    cache_dir=self.cache_dir
+                )
+                with open(caption_path, "r") as f:
+                    caption_content = f.read().strip()
+            
                 downloaded_pairs.append({
                     "video": video_path, 
                     "caption": caption_content
@@ -268,12 +190,7 @@ class VideoDataset(torch.utils.data.Dataset):
             except Exception as e:
                 print(f"   ⚠️ Skipping {p['video']}: {e}")
         
-        # 🔥 Run Phase 2 Captioning if enabled
-        if config.get("use_ai_captioning", True):
-            self.local_pairs = caption_videos_with_blip(downloaded_pairs[:2], config) # 🧪 TEST MODE: Only 2 items
-        else:
-            self.local_pairs = downloaded_pairs[:2] # 🧪 TEST MODE: Only 2 items
-            
+        self.local_pairs = downloaded_pairs
         print(f"✅ Prepared {len(self.local_pairs)} pairs for training (TEST MODE)")
     
     def __len__(self):
@@ -650,44 +567,25 @@ def push_to_hub(config, checkpoint_path="best"):
 # 7. MAIN (Refactored for Memory Safety)
 # ============================================================
 def main():
-    import argparse
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--mode", type=str, default="all", choices=["all", "caption", "train"], help="Run 'caption' first, then 'train' in separate internal calls")
-    args = parser.parse_args()
-    
     print("=" * 60)
-    print(f"🔥 ADeyDreamGen-v1 — Mode: {args.mode.upper()}")
+    print(f"🔥 ADeyDreamGen-v1 — Mode: TRAINING ONLY")
     print("=" * 60)
     
-    if args.mode == "caption":
-        # ONLY Download & Caption
-        print("🧠 Running Phase 2: Captioning Only...")
-        pairs = load_training_data(CONFIG)
-        
-        # Download & Caption
-        dataset = VideoDataset(pairs, CONFIG) # This triggers download & captioning
-        print("✅ Captioning complete. Metadata saved in cache.")
-        
-    elif args.mode == "train":
-        # ONLY Train (Assume data is ready)
-        print("🏋️ Running Phase 3: Training Only...")
-        # Disable captioning for this run since it's already done
-        CONFIG["use_ai_captioning"] = False 
-        train(CONFIG)
-        
-        # Step 2: Comparison
+    # Run Training
+    train(CONFIG)
+    
+    # Run Evaluation (Comparison)
+    try:
         generate_comparison(CONFIG, checkpoint_path="best")
-        
-        # Step 3: Push
-        if CONFIG.get("push_to_hub", False):
+    except Exception as e:
+        print(f"⚠️ Comparison generation failed (OOM?): {e}")
+
+    # Push to Hub
+    if CONFIG.get("push_to_hub", False):
+        try:
             push_to_hub(CONFIG, checkpoint_path="best")
-            
-    else:
-        # Default: Try to run everything (May OOM)
-        train(CONFIG)
-        generate_comparison(CONFIG, checkpoint_path="best")
-        if CONFIG.get("push_to_hub", False):
-            push_to_hub(CONFIG, checkpoint_path="best")
+        except Exception as e:
+            print(f"⚠️ Push to Hub failed: {e}")
 
 if __name__ == "__main__":
     main()

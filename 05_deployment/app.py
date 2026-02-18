@@ -23,13 +23,23 @@ def load_pipeline():
     pipe.scheduler = DPMSolverMultistepScheduler.from_config(pipe.scheduler.config)
     
     # Optimize for T4 GPU (Hugging Face Spaces)
+    # CPU Offload: Moves unused model parts to CPU RAM (Critical for 16GB VRAM)
     pipe.enable_model_cpu_offload() 
+    
+    # VAE Slicing/Tiling: Process images in chunks to save VRAM
     pipe.enable_vae_slicing()
+    # pipe.enable_vae_tiling() # Enable if you see black images at high res
     
     print(f"🔄 Loading LoRA Weights from {LORA_MODEL_ID}...")
     try:
-        pipe.unet = PeftModel.from_pretrained(pipe.unet, LORA_MODEL_ID)
-        print("✅ LoRA weights loaded successfully!")
+        # Check if LoRA exists on Hub before loading
+        from huggingface_hub import list_repo_files
+        files = list_repo_files(LORA_MODEL_ID)
+        if "adapter_config.json" in files:
+            pipe.unet = PeftModel.from_pretrained(pipe.unet, LORA_MODEL_ID)
+            print("✅ LoRA weights loaded successfully!")
+        else:
+            print("⚠️ LoRA not found on Hub yet. Running Base Model.")
     except Exception as e:
         print(f"⚠️ Could not load LoRA (using base model only): {e}")
 
