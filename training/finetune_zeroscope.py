@@ -39,6 +39,7 @@ CONFIG = {
     
     # Dataset
     "dataset_repo": "a-k-dey/akd-video-training-dataset",  # Your HF dataset
+    "use_ai_captioning": True,                             # Phase 2: Use BLIP-2 VLM
     
     # Training
     "output_dir": "/kaggle/working/finetuned_model",
@@ -56,7 +57,7 @@ CONFIG = {
     "lora_target_modules": ["to_q", "to_v", "to_k", "to_out.0"],
     
     # Video Processing
-    "resolution": 320,          # Train at 320 for speed, 576 for quality
+    "resolution": 320,          # Reduced to avoid OOM
     "num_frames": 24,           # 24 frames = ~3s at 8fps
     "fps": 8,
     
@@ -148,39 +149,131 @@ def extract_frames_from_video(video_path, num_frames, resolution):
     return np.stack(frames)  # (num_frames, H, W, 3)
 
 
+def caption_videos_with_blip(pairs, config):
+    """
+    PHASE 2: The Vision Brain
+    Use a VLM (BLIP-2 or similar) to generate dense, descriptive captions
+    for each video before training. This significantly improves prompt adherence.
+    """
+    from transformers import Blip2Processor, Blip2ForConditionalGeneration
+    from PIL import Image
+    import cv2
+    import numpy as np
+    
+    print("\n" + "=" * 40)
+    print("🧠 PHASE 2: VISION BRAIN ACTIVATED")
+    print("=" * 40)
+    print("   Loading BLIP-2 for automated captioning...")
+    
+    # Load BLIP-2 (Lightweight optic-2.7b fits on T4)
+    processor = Blip2Processor.from_pretrained("Salesforce/blip2-opt-2.7b")
+    model = Blip2ForConditionalGeneration.from_pretrained(
+        "Salesforce/blip2-opt-2.7b", 
+        torch_dtype=torch.float16,
+        device_map="auto"
+    )
+    
+    new_pairs = []
+    
+    print(f"   Captioning {len(pairs)} videos...")
+    for i, pair in enumerate(pairs):
+        try:
+            # 1. Extract the middle frame
+            cap = cv2.VideoCapture(pair["video"])
+            total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            cap.set(cv2.CAP_PROP_POS_FRAMES, total_frames // 2)
+            ret, frame = cap.read()
+            cap.release()
+            
+            if not ret:
+                continue
+                
+            # Convert to PIL
+            image = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+            
+            # 2. Generate Caption
+            inputs = processor(images=image, text="a cinematic shot of", return_tensors="pt").to("cuda", torch.float16)
+            generated_ids = model.generate(**inputs, max_new_tokens=50)
+            caption = processor.batch_decode(generated_ids, skip_special_tokens=True)[0].strip()
+            
+            # Clean up caption
+            if not caption.startswith("a cinematic shot of"):
+                caption = "a cinematic shot of " + caption
+            
+            # 3. Store new caption
+            pair["caption_text"] = caption
+            new_pairs.append(pair)
+            
+            if i % 5 == 0:
+                print(f"   [{i}/{len(pairs)}] Generated: {caption}")
+                
+        except Exception as e:
+            print(f"   ⚠️ Failed to caption {pair['video']}: {e}")
+            # Fallback to original text file if BLIP fails
+            with open(pair["caption"], "r") as f:
+                pair["caption_text"] = f.read().strip()
+            new_pairs.append(pair)
+            
+    # Free VRAM explicitly
+    del model, processor        
+    torch.cuda.empty_cache()
+    import gc
+    gc.collect()
+    print("🧠 Vision Brain unloaded. Memory cleared.")
+    
+    return new_pairs
+
 class VideoDataset(torch.utils.data.Dataset):
     """PyTorch Dataset for video-caption pairs."""
     
     def __init__(self, pairs, config):
         from huggingface_hub import hf_hub_download
         
-        self.pairs = pairs
         self.config = config
         self.cache_dir = "/kaggle/working/video_cache"
         os.makedirs(self.cache_dir, exist_ok=True)
         
         # Pre-download all videos
         print(f"⬇️ Downloading {len(pairs)} videos...")
-        self.local_pairs = []
+        downloaded_pairs = []
         for p in pairs:
             try:
+                # Download Video
                 video_path = hf_hub_download(
                     repo_id=config["dataset_repo"],
                     filename=p["video"],
                     repo_type="dataset",
                     cache_dir=self.cache_dir
                 )
-                caption_path = hf_hub_download(
-                    repo_id=config["dataset_repo"],
-                    filename=p["caption"],
-                    repo_type="dataset",
-                    cache_dir=self.cache_dir
-                )
-                self.local_pairs.append({"video": video_path, "caption": caption_path})
+                
+                # Check if we already computed caption in Phase 2
+                if "caption_text" in p:
+                    caption_content = p["caption_text"]
+                else:
+                    # Fallback to downloading text file
+                    caption_path = hf_hub_download(
+                        repo_id=config["dataset_repo"],
+                        filename=p["caption"],
+                        repo_type="dataset",
+                        cache_dir=self.cache_dir
+                    )
+                    with open(caption_path, "r") as f:
+                        caption_content = f.read().strip()
+                
+                downloaded_pairs.append({
+                    "video": video_path, 
+                    "caption": caption_content
+                })
             except Exception as e:
                 print(f"   ⚠️ Skipping {p['video']}: {e}")
         
-        print(f"✅ Downloaded {len(self.local_pairs)} pairs successfully")
+        # 🔥 Run Phase 2 Captioning if enabled
+        if config.get("use_ai_captioning", True):
+            self.local_pairs = caption_videos_with_blip(downloaded_pairs, config)
+        else:
+            self.local_pairs = downloaded_pairs
+            
+        print(f"✅ Prepared {len(self.local_pairs)} pairs for training")
     
     def __len__(self):
         return len(self.local_pairs)
@@ -188,9 +281,8 @@ class VideoDataset(torch.utils.data.Dataset):
     def __getitem__(self, idx):
         pair = self.local_pairs[idx]
         
-        # Load caption
-        with open(pair["caption"], "r") as f:
-            caption = f.read().strip()
+        # Use valid caption string directly
+        caption = pair["caption"]
         
         # Extract frames
         frames = extract_frames_from_video(
@@ -200,11 +292,9 @@ class VideoDataset(torch.utils.data.Dataset):
         )
         
         if frames is None:
-            # Return a dummy if extraction fails
             frames = torch.zeros(self.config["num_frames"], 3, self.config["resolution"], self.config["resolution"])
-            caption = "a blank video"
+            caption = "error"
         else:
-            # Normalize to [-1, 1]
             frames = torch.tensor(frames).permute(0, 3, 1, 2).float() / 127.5 - 1.0
         
         return {"pixel_values": frames, "text": caption}
@@ -226,6 +316,10 @@ def setup_training(config):
     
     # Extract the UNet (the core model we fine-tune)
     unet = pipe.unet
+    
+    # 📉 VRAM HACK: Enable Gradient Checkpointing (Saves ~40% VRAM)
+    unet.enable_gradient_checkpointing()
+    print("📉 Gradient Checkpointing enabled.")
     
     # Apply LoRA to temporal layers only
     lora_config = LoraConfig(
