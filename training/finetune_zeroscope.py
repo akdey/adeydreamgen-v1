@@ -279,6 +279,8 @@ def train(config):
                     pass
             
             if wandb_key:
+                # 🔑 FORCE ENV VAR: This handles both 40-char Personal Keys and 80-char Service Keys
+                os.environ["WANDB_API_KEY"] = wandb_key
                 wandb.login(key=wandb_key)
                 wandb.init(project=config["wandb_project"], config=config)
                 print("✅ Weights & Biases initialized")
