@@ -39,7 +39,7 @@ CONFIG = {
     
     # Dataset
     "dataset_repo": "a-k-dey/akd-video-training-dataset",  # Your HF dataset
-    "use_ai_captioning": True,                             # Phase 2: Use BLIP-2 VLM
+    "use_ai_captioning": False,                            # DISABLED: Skipping Phase 2 to fix loading error
     
     # Training
     "output_dir": "/kaggle/working/finetuned_model",
@@ -461,9 +461,11 @@ def train(config):
                 text_embeddings = text_encoder(text_inputs.input_ids)[0]
                 text_embeddings = text_embeddings.to("cuda", dtype=torch.float16) # Move ONLY result to GPU
             
-            # 📉 VRAM HACK: CPU OFFLOAD VAE (Optional: If still OOM, do this too)
-            # For now, let's try keeping VAE on GPU as it handles images faster
-            # But let's process VAE in small chunks (slicing)
+            # 📉 VRAM HACK: CPU OFFLOAD VAE
+            # Process frames through VAE
+            # FIX: Unpack shape properly before using b, f, c, h, w
+            b, f, c, h, w = pixel_values.shape
+            
             vae = pipe.vae.to("cuda", dtype=torch.float16)
             pixel_values_flat = pixel_values.reshape(b * f, c, h, w)
             
