@@ -268,10 +268,25 @@ def train(config):
     if config["use_wandb"]:
         try:
             import wandb
-            wandb.init(project=config["wandb_project"], config=config)
-            print("✅ Weights & Biases initialized")
-        except Exception:
-            print("⚠️ W&B not available, continuing without monitoring")
+            # Try to get API key from environment or Kaggle secrets
+            wandb_key = os.getenv("WANDB_API_KEY")
+            if not wandb_key:
+                try:
+                    from kaggle_secrets import UserSecretsClient
+                    user_secrets = UserSecretsClient()
+                    wandb_key = user_secrets.get_secret("WANDB_API_KEY")
+                except:
+                    pass
+            
+            if wandb_key:
+                wandb.login(key=wandb_key)
+                wandb.init(project=config["wandb_project"], config=config)
+                print("✅ Weights & Biases initialized")
+            else:
+                print("⚠️ WANDB_API_KEY not found. Running offline.")
+                config["use_wandb"] = False
+        except Exception as e:
+            print(f"⚠️ W&B Error: {e}, continuing without monitoring")
             config["use_wandb"] = False
     
     # Load data

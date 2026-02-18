@@ -1,0 +1,10 @@
+diffusers
+transformers
+accelerate
+peft
+dataset
+imageio[ffmpeg]
+safetensors
+huggingface_hub
+wandb
+opencv-python-headless
