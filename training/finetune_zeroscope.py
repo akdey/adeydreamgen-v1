@@ -443,20 +443,48 @@ def train(config):
                 return_tensors="pt"
             ).to("cuda")
             
-            text_encoder = pipe.text_encoder.to("cuda", dtype=torch.float16)
-            with torch.no_grad():
-                text_embeddings = text_encoder(text_inputs.input_ids)[0]
+            # 📉 VRAM HACK: CPU OFFLOAD
+            # Move Text Encoder to CPU, run inference, then move result to GPU
+            pipe.text_encoder.to("cpu")
+            text_encoder = pipe.text_encoder
+            text_inputs = tokenizer(
+                batch["text"],
+                max_length=tokenizer.model_max_length,
+                padding="max_length",
+                truncation=True,
+                return_tensors="pt"
+            ) # Keep on CPU
             
-            # Encode video frames to latent space
-            vae = pipe.vae.to("cuda", dtype=torch.float16)
             with torch.no_grad():
-                # Process frames through VAE
-                b, f, c, h, w = pixel_values.shape
-                pixel_values_flat = pixel_values.reshape(b * f, c, h, w)
-                latents = vae.encode(pixel_values_flat).latent_dist.sample()
-                latents = latents * vae.config.scaling_factor
-                latents = latents.reshape(b, f, *latents.shape[1:])
-                latents = latents.permute(0, 2, 1, 3, 4)  # (B, C, F, H, W)
+                # Run on CPU
+                print("   Running Text Encoder on CPU...", end="\r")
+                text_embeddings = text_encoder(text_inputs.input_ids)[0]
+                text_embeddings = text_embeddings.to("cuda", dtype=torch.float16) # Move ONLY result to GPU
+            
+            # 📉 VRAM HACK: CPU OFFLOAD VAE (Optional: If still OOM, do this too)
+            # For now, let's try keeping VAE on GPU as it handles images faster
+            # But let's process VAE in small chunks (slicing)
+            vae = pipe.vae.to("cuda", dtype=torch.float16)
+            pixel_values_flat = pixel_values.reshape(b * f, c, h, w)
+            
+            # Encode in chunks to save VAE memory
+            latents_list = []
+            chunk_size = 4 # Process 4 frames at a time
+            for i in range(0, pixel_values_flat.shape[0], chunk_size):
+                chunk = pixel_values_flat[i:i+chunk_size]
+                with torch.no_grad():
+                    chunk_latents = vae.encode(chunk).latent_dist.sample()
+                latents_list.append(chunk_latents)
+            
+            latents = torch.cat(latents_list, dim=0)
+            latents = latents * vae.config.scaling_factor
+            latents = latents.reshape(b, f, *latents.shape[1:])
+            latents = latents.permute(0, 2, 1, 3, 4)  # (B, C, F, H, W)
+            
+            # Move VAE back to CPU to save memory for UNet? 
+            # Ideally yes, but let's see if this is enough.
+            del vae
+            torch.cuda.empty_cache()
             
             # Add noise
             noise = torch.randn_like(latents)
