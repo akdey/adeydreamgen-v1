@@ -57,7 +57,7 @@ CONFIG = {
     "lora_target_modules": ["to_q", "to_v", "to_k", "to_out.0"],
     
     # Video Processing
-    "resolution": 320,          # Reduced to avoid OOM
+    "resolution": 256,          # Final squeeze to 256p
     "num_frames": 16,           # Reduced to 16 for T4 VRAM safety
     "fps": 8,
     
@@ -330,7 +330,7 @@ def setup_training(config):
         r=config["lora_rank"],
         lora_alpha=config["lora_alpha"],
         target_modules=config["lora_target_modules"],
-        lora_dropout=0.05,
+        lora_dropout=0.0, # Disable dropout to save VRAM
     )
     
     unet = get_peft_model(unet, lora_config)
