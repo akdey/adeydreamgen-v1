@@ -318,10 +318,6 @@ def setup_training(config):
     # Extract the UNet (the core model we fine-tune)
     unet = pipe.unet
     
-    # 📉 VRAM HACK: Enable Gradient Checkpointing (Saves ~40% VRAM)
-    unet.enable_gradient_checkpointing()
-    print("📉 Gradient Checkpointing enabled.")
-    
     # Apply LoRA to temporal layers only
     lora_config = LoraConfig(
         r=config["lora_rank"],
