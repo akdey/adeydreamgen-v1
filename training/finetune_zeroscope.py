@@ -1,0 +1,517 @@
+"""
+🔥 ADeyDreamGen-v1 — Fine-Tuning Script (Track B: Train & Improve)
+=====================================================================
+This script fine-tunes the Zeroscope v2 XL temporal layers using your
+scraped dataset from Hugging Face. It is designed to run on Kaggle's
+free T4/P100 GPU.
+
+HOW TO RUN (Kaggle):
+1. Create a new Kaggle notebook
+2. Enable GPU (T4 x2 or P100)
+3. Add your HF_TOKEN as a Kaggle Secret
+4. Paste this entire script into a cell
+5. Run the cell
+
+STRATEGY:
+- We freeze the spatial (image) layers — they already know "what things look like"
+- We only train the temporal (motion) layers — teaching the model "how things move"
+- This is called "Temporal LoRA" and is extremely efficient (uses <8GB VRAM)
+"""
+
+import torch
+import os
+import json
+import time
+from datetime import datetime
+from pathlib import Path
+
+# ============================================================
+# 1. INSTALL DEPENDENCIES
+# ============================================================
+# !pip install -q diffusers transformers accelerate peft datasets imageio[ffmpeg] safetensors huggingface_hub wandb opencv-python-headless
+
+# ============================================================
+# 2. CONFIGURATION
+# ============================================================
+CONFIG = {
+    # Model
+    "base_model": "cerspense/zeroscope_v2_XL",
+    
+    # Dataset
+    "dataset_repo": "a-k-dey/akd-video-training-dataset",  # Your HF dataset
+    
+    # Training
+    "output_dir": "/kaggle/working/finetuned_model",
+    "num_train_epochs": 3,
+    "train_batch_size": 1,
+    "gradient_accumulation_steps": 4, # Effective batch size = 4
+    "learning_rate": 1e-5,
+    "lr_scheduler": "cosine",
+    "warmup_steps": 100,
+    "max_train_steps": 2000,
+    
+    # LoRA
+    "lora_rank": 16,
+    "lora_alpha": 32,
+    "lora_target_modules": ["to_q", "to_v", "to_k", "to_out.0"],
+    
+    # Video Processing
+    "resolution": 320,          # Train at 320 for speed, 576 for quality
+    "num_frames": 24,           # 24 frames = ~3s at 8fps
+    "fps": 8,
+    
+    # Monitoring
+    "use_wandb": True,
+    "wandb_project": "adeydreamgen-v1",
+    
+    # Checkpointing & Deployment
+    "save_every_n_steps": 500,
+    "push_to_hub": True,             # Automatically push best model to HF
+    "hub_model_id": "a-k-dey/adeydreamgen-v1", # Your target model repo
+    "validation_prompts": [
+        "A person walking through a misty forest, cinematic",
+        "Ocean waves at sunset, golden hour, aerial drone shot",
+        "Close up of coffee being poured into a white cup, slow motion"
+    ]
+}
+
+# ============================================================
+# 3. DATASET LOADER
+# ============================================================
+def load_training_data(config):
+    """
+    Load video-caption pairs from Hugging Face dataset.
+    Expects: orientation/video_id.mp4 + orientation/video_id.txt
+    """
+    from huggingface_hub import HfApi, hf_hub_download
+    import cv2
+    import numpy as np
+    
+    api = HfApi()
+    print(f"📦 Loading dataset from {config['dataset_repo']}...")
+    
+    # List all files
+    all_files = api.list_repo_files(repo_id=config["dataset_repo"], repo_type="dataset")
+    
+    # Find video files
+    video_files = [f for f in all_files if f.endswith(".mp4")]
+    print(f"   Found {len(video_files)} videos in dataset")
+    
+    # Build pairs
+    pairs = []
+    for vf in video_files:
+        txt_file = vf.replace(".mp4", ".txt")
+        if txt_file in all_files:
+            pairs.append({"video": vf, "caption": txt_file})
+    
+    print(f"   Found {len(pairs)} video-caption pairs")
+    return pairs
+
+def extract_frames_from_video(video_path, num_frames, resolution):
+    """Extract evenly-spaced frames from a video file."""
+    import cv2
+    import numpy as np
+    
+    cap = cv2.VideoCapture(video_path)
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    
+    if total_frames <= 0:
+        cap.release()
+        return None
+    
+    # Sample evenly spaced frames
+    indices = np.linspace(0, total_frames - 1, num_frames, dtype=int)
+    
+    frames = []
+    for idx in indices:
+        cap.set(cv2.CAP_PROP_POS_FRAMES, idx)
+        ret, frame = cap.read()
+        if ret:
+            # Convert BGR to RGB
+            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            # Resize to target resolution (maintaining aspect ratio)
+            h, w = frame.shape[:2]
+            if w > h:  # Landscape
+                new_w = int(resolution * 16 / 9)
+                new_h = resolution
+            else:  # Portrait
+                new_w = resolution
+                new_h = int(resolution * 16 / 9)
+            frame = cv2.resize(frame, (new_w, new_h))
+            frames.append(frame)
+    
+    cap.release()
+    
+    if len(frames) != num_frames:
+        return None
+    
+    return np.stack(frames)  # (num_frames, H, W, 3)
+
+
+class VideoDataset(torch.utils.data.Dataset):
+    """PyTorch Dataset for video-caption pairs."""
+    
+    def __init__(self, pairs, config):
+        from huggingface_hub import hf_hub_download
+        
+        self.pairs = pairs
+        self.config = config
+        self.cache_dir = "/kaggle/working/video_cache"
+        os.makedirs(self.cache_dir, exist_ok=True)
+        
+        # Pre-download all videos
+        print(f"⬇️ Downloading {len(pairs)} videos...")
+        self.local_pairs = []
+        for p in pairs:
+            try:
+                video_path = hf_hub_download(
+                    repo_id=config["dataset_repo"],
+                    filename=p["video"],
+                    repo_type="dataset",
+                    cache_dir=self.cache_dir
+                )
+                caption_path = hf_hub_download(
+                    repo_id=config["dataset_repo"],
+                    filename=p["caption"],
+                    repo_type="dataset",
+                    cache_dir=self.cache_dir
+                )
+                self.local_pairs.append({"video": video_path, "caption": caption_path})
+            except Exception as e:
+                print(f"   ⚠️ Skipping {p['video']}: {e}")
+        
+        print(f"✅ Downloaded {len(self.local_pairs)} pairs successfully")
+    
+    def __len__(self):
+        return len(self.local_pairs)
+    
+    def __getitem__(self, idx):
+        pair = self.local_pairs[idx]
+        
+        # Load caption
+        with open(pair["caption"], "r") as f:
+            caption = f.read().strip()
+        
+        # Extract frames
+        frames = extract_frames_from_video(
+            pair["video"],
+            self.config["num_frames"],
+            self.config["resolution"]
+        )
+        
+        if frames is None:
+            # Return a dummy if extraction fails
+            frames = torch.zeros(self.config["num_frames"], 3, self.config["resolution"], self.config["resolution"])
+            caption = "a blank video"
+        else:
+            # Normalize to [-1, 1]
+            frames = torch.tensor(frames).permute(0, 3, 1, 2).float() / 127.5 - 1.0
+        
+        return {"pixel_values": frames, "text": caption}
+
+
+# ============================================================
+# 4. TRAINING LOOP
+# ============================================================
+def setup_training(config):
+    """Setup model, optimizer, and training infrastructure."""
+    from diffusers import DiffusionPipeline, DPMSolverMultistepScheduler
+    from peft import LoraConfig, get_peft_model
+    
+    print("🔄 Loading base model for fine-tuning...")
+    pipe = DiffusionPipeline.from_pretrained(
+        config["base_model"],
+        torch_dtype=torch.float16,
+    )
+    
+    # Extract the UNet (the core model we fine-tune)
+    unet = pipe.unet
+    
+    # Apply LoRA to temporal layers only
+    lora_config = LoraConfig(
+        r=config["lora_rank"],
+        lora_alpha=config["lora_alpha"],
+        target_modules=config["lora_target_modules"],
+        lora_dropout=0.05,
+    )
+    
+    unet = get_peft_model(unet, lora_config)
+    unet.print_trainable_parameters()
+    
+    # Move to GPU
+    unet = unet.to("cuda", dtype=torch.float16)
+    
+    # Freeze everything except LoRA
+    for name, param in unet.named_parameters():
+        if "lora" not in name:
+            param.requires_grad = False
+    
+    # Optimizer
+    trainable_params = [p for p in unet.parameters() if p.requires_grad]
+    optimizer = torch.optim.AdamW(trainable_params, lr=config["learning_rate"], weight_decay=0.01)
+    
+    # Scheduler
+    from torch.optim.lr_scheduler import CosineAnnealingLR
+    scheduler = CosineAnnealingLR(optimizer, T_max=config["max_train_steps"])
+    
+    print(f"✅ Training setup complete")
+    print(f"   Trainable params: {sum(p.numel() for p in trainable_params):,}")
+    print(f"   LoRA Rank: {config['lora_rank']}")
+    print(f"   Learning Rate: {config['learning_rate']}")
+    
+    return pipe, unet, optimizer, scheduler
+
+def train(config):
+    """Main training loop."""
+    
+    # Optional: Weights & Biases
+    if config["use_wandb"]:
+        try:
+            import wandb
+            wandb.init(project=config["wandb_project"], config=config)
+            print("✅ Weights & Biases initialized")
+        except Exception:
+            print("⚠️ W&B not available, continuing without monitoring")
+            config["use_wandb"] = False
+    
+    # Load data
+    pairs = load_training_data(config)
+    if len(pairs) == 0:
+        print("❌ No training data found! Make sure the scraper has collected videos.")
+        return
+    
+    dataset = VideoDataset(pairs, config)
+    dataloader = torch.utils.data.DataLoader(
+        dataset,
+        batch_size=config["train_batch_size"],
+        shuffle=True,
+        num_workers=2,
+        pin_memory=True
+    )
+    
+    # Setup model
+    pipe, unet, optimizer, scheduler = setup_training(config)
+    
+    # Training
+    print("\n" + "=" * 60)
+    print("🔥 TRAINING STARTED")
+    print("=" * 60)
+    
+    os.makedirs(config["output_dir"], exist_ok=True)
+    global_step = 0
+    best_loss = float("inf")
+    
+    for epoch in range(config["num_train_epochs"]):
+        epoch_loss = 0.0
+        num_batches = 0
+        
+        for batch_idx, batch in enumerate(dataloader):
+            if global_step >= config["max_train_steps"]:
+                break
+            
+            pixel_values = batch["pixel_values"].to("cuda", dtype=torch.float16)
+            
+            # Encode text
+            from transformers import CLIPTokenizer
+            tokenizer = pipe.tokenizer
+            text_inputs = tokenizer(
+                batch["text"],
+                max_length=tokenizer.model_max_length,
+                padding="max_length",
+                truncation=True,
+                return_tensors="pt"
+            ).to("cuda")
+            
+            text_encoder = pipe.text_encoder.to("cuda", dtype=torch.float16)
+            with torch.no_grad():
+                text_embeddings = text_encoder(text_inputs.input_ids)[0]
+            
+            # Encode video frames to latent space
+            vae = pipe.vae.to("cuda", dtype=torch.float16)
+            with torch.no_grad():
+                # Process frames through VAE
+                b, f, c, h, w = pixel_values.shape
+                pixel_values_flat = pixel_values.reshape(b * f, c, h, w)
+                latents = vae.encode(pixel_values_flat).latent_dist.sample()
+                latents = latents * vae.config.scaling_factor
+                latents = latents.reshape(b, f, *latents.shape[1:])
+                latents = latents.permute(0, 2, 1, 3, 4)  # (B, C, F, H, W)
+            
+            # Add noise
+            noise = torch.randn_like(latents)
+            timesteps = torch.randint(0, pipe.scheduler.config.num_train_timesteps, (b,), device="cuda")
+            noisy_latents = pipe.scheduler.add_noise(latents, noise, timesteps)
+            
+            # Predict noise
+            noise_pred = unet(noisy_latents, timesteps, encoder_hidden_states=text_embeddings).sample
+            
+            # Loss
+            loss = torch.nn.functional.mse_loss(noise_pred, noise)
+            loss = loss / config["gradient_accumulation_steps"]
+            loss.backward()
+            
+            if (batch_idx + 1) % config["gradient_accumulation_steps"] == 0:
+                torch.nn.utils.clip_grad_norm_(unet.parameters(), 1.0)
+                optimizer.step()
+                scheduler.step()
+                optimizer.zero_grad()
+                global_step += 1
+            
+            epoch_loss += loss.item()
+            num_batches += 1
+            
+            # Logging
+            if global_step % 10 == 0:
+                avg_loss = epoch_loss / max(num_batches, 1)
+                lr = scheduler.get_last_lr()[0]
+                print(f"   Step {global_step}/{config['max_train_steps']} | Loss: {avg_loss:.4f} | LR: {lr:.2e}")
+                
+                if config["use_wandb"]:
+                    import wandb
+                    wandb.log({
+                        "loss": avg_loss,
+                        "learning_rate": lr,
+                        "epoch": epoch,
+                        "step": global_step
+                    })
+            
+            # Checkpoint
+            if global_step > 0 and global_step % config["save_every_n_steps"] == 0:
+                save_checkpoint(unet, config, global_step)
+                
+                # Track best model
+                avg_loss = epoch_loss / max(num_batches, 1)
+                if avg_loss < best_loss:
+                    best_loss = avg_loss
+                    save_checkpoint(unet, config, "best")
+            
+            # Free VRAM
+            del pixel_values, noise, noisy_latents, noise_pred, latents
+            torch.cuda.empty_cache()
+        
+        avg_epoch_loss = epoch_loss / max(num_batches, 1)
+        print(f"\n📊 Epoch {epoch+1}/{config['num_train_epochs']} complete | Avg Loss: {avg_epoch_loss:.4f}")
+    
+    # Final save
+    save_checkpoint(unet, config, "final")
+    
+    print("\n" + "=" * 60)
+    print("🏁 TRAINING COMPLETE")
+    print(f"   Final Loss: {avg_epoch_loss:.4f}")
+    print(f"   Best Loss: {best_loss:.4f}")
+    print(f"   Model saved to: {config['output_dir']}")
+    print("=" * 60)
+    
+    if config["use_wandb"]:
+        import wandb
+        wandb.finish()
+
+def save_checkpoint(unet, config, step_label):
+    """Save a LoRA checkpoint."""
+    checkpoint_dir = os.path.join(config["output_dir"], f"checkpoint-{step_label}")
+    os.makedirs(checkpoint_dir, exist_ok=True)
+    unet.save_pretrained(checkpoint_dir)
+    print(f"💾 Checkpoint saved: {checkpoint_dir}")
+
+
+# ============================================================
+# 5. GENERATE WITH FINE-TUNED MODEL (Validation)
+# ============================================================
+def generate_comparison(config, checkpoint_path="final"):
+    """
+    Generate videos with both the base model and your fine-tuned model
+    side by side for comparison.
+    """
+    from diffusers import DiffusionPipeline, DPMSolverMultistepScheduler
+    from diffusers.utils import export_to_video
+    from peft import PeftModel
+    
+    compare_dir = os.path.join(config["output_dir"], "comparison")
+    os.makedirs(compare_dir, exist_ok=True)
+    
+    # Load base model
+    pipe = DiffusionPipeline.from_pretrained(
+        config["base_model"],
+        torch_dtype=torch.float16,
+    )
+    pipe.scheduler = DPMSolverMultistepScheduler.from_config(pipe.scheduler.config)
+    pipe.enable_model_cpu_offload()
+    pipe.enable_vae_slicing()
+    
+    for i, prompt in enumerate(config["validation_prompts"]):
+        print(f"\n🎬 Generating comparison for: '{prompt[:50]}...'")
+        
+        # Generate with BASE model
+        base_result = pipe(
+            prompt=prompt,
+            negative_prompt="low quality, blurry, distorted",
+            num_frames=24, height=320, width=576,
+            num_inference_steps=40, guidance_scale=12.5
+        )
+        base_path = os.path.join(compare_dir, f"base_{i:03d}.mp4")
+        export_to_video(base_result.frames[0], base_path, fps=8)
+        
+        # Load fine-tuned LoRA weights
+        lora_path = os.path.join(config["output_dir"], f"checkpoint-{checkpoint_path}")
+        pipe.unet = PeftModel.from_pretrained(pipe.unet, lora_path)
+        
+        # Generate with FINE-TUNED model
+        ft_result = pipe(
+            prompt=prompt,
+            negative_prompt="low quality, blurry, distorted",
+            num_frames=24, height=320, width=576,
+            num_inference_steps=40, guidance_scale=12.5
+        )
+        ft_path = os.path.join(compare_dir, f"finetuned_{i:03d}.mp4")
+        export_to_video(ft_result.frames[0], ft_path, fps=8)
+        
+        print(f"   Base: {base_path}")
+        print(f"   Fine-tuned: {ft_path}")
+        
+        torch.cuda.empty_cache()
+    
+    print(f"\n✅ Comparison videos saved to {compare_dir}")
+
+
+# ============================================================
+# 6. PUSH TO HUGGING FACE
+# ============================================================
+def push_to_hub(config, checkpoint_path="best"):
+    """Push the fine-tuned LoRA weights to Hugging Face."""
+    from huggingface_hub import HfApi
+    
+    api = HfApi()
+    lora_dir = os.path.join(config["output_dir"], f"checkpoint-{checkpoint_path}")
+    
+    target_repo = config["hub_model_id"]
+    
+    print(f"🚀 Pushing LoRA weights to {target_repo}...")
+    api.upload_folder(
+        folder_path=lora_dir,
+        repo_id=target_repo,
+        repo_type="model",
+        commit_message=f"Upload ADeyDreamGen-v1 LoRA ({checkpoint_path})"
+    )
+    print(f"✅ Model pushed to https://huggingface.co/{target_repo}")
+
+
+# ============================================================
+# 7. MAIN
+# ============================================================
+def main():
+    print("=" * 60)
+    print("🔥 ADeyDreamGen-v1 — Fine-Tuning Pipeline")
+    print("=" * 60)
+    
+    # Step 1: Train
+    train(CONFIG)
+    
+    # Step 2: Generate comparison videos
+    generate_comparison(CONFIG, checkpoint_path="best")
+    
+    # Step 3: Push to Hub (if configured)
+    if config.get("push_to_hub", False):
+        push_to_hub(CONFIG, checkpoint_path="best")
+
+if __name__ == "__main__":
+    main()

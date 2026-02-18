@@ -50,8 +50,10 @@ Using a specialized training regime on **Kaggle's T4/P100 infrastructure**, we a
 - [x] **Phase 1: The Great Harvesting** – Modular scraper with dual-source ingestion.
 - [x] **Phase 1.1: Parallelization** – Matrix-based GitHub automation (32x concurrent threads).
 - [x] **Phase 1.2: Recursive Exploration** – Unbounded tag-based discovery.
+- [x] **Phase 1.3: Atomic Batching** – Single-commit uploads to avoid HF rate limits.
 - [ ] **Phase 2: The Vision Brain** – AI-driven hyper-descriptive captioning (LLaVA-1.5).
-- [ ] **Phase 3: The Forge** – Fine-tuning on 1000+ curated cinematic clips.
+- [x] **Phase 3: The Forge (Setup)** – Temporal LoRA fine-tuning pipeline on Kaggle.
+- [ ] **Phase 3.1: The Forge (Training)** – First fine-tuning run with 500+ curated clips.
 - [ ] **Phase 4: The Generation** – Deployment of the ADeyDreamGen-v1 model.
 
 ---
