@@ -58,7 +58,7 @@ CONFIG = {
     
     # Video Processing
     "resolution": 320,          # Reduced to avoid OOM
-    "num_frames": 24,           # 24 frames = ~3s at 8fps
+    "num_frames": 16,           # Reduced to 16 for T4 VRAM safety
     "fps": 8,
     
     # Monitoring
@@ -346,7 +346,13 @@ def setup_training(config):
     
     # Optimizer
     trainable_params = [p for p in unet.parameters() if p.requires_grad]
-    optimizer = torch.optim.AdamW(trainable_params, lr=config["learning_rate"], weight_decay=0.01)
+    try:
+        import bitsandbytes as bnb
+        optimizer = bnb.optim.AdamW8bit(trainable_params, lr=config["learning_rate"], weight_decay=0.01)
+        print("✅ Using 8-bit AdamW optimizer (VRAM SAVER)")
+    except ImportError:
+        print("⚠️ BitsAndBytes not found. Using standard AdamW.")
+        optimizer = torch.optim.AdamW(trainable_params, lr=config["learning_rate"], weight_decay=0.01)
     
     # Scheduler
     from torch.optim.lr_scheduler import CosineAnnealingLR
