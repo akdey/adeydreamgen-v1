@@ -236,7 +236,8 @@ class VideoDataset(torch.utils.data.Dataset):
         # Pre-download all videos
         print(f"⬇️ Downloading {len(pairs)} videos...")
         downloaded_pairs = []
-        for p in pairs:
+        for i, p in enumerate(pairs):
+            if len(downloaded_pairs) >= 2: break # 🧪 TEST MODE: Stop after 2 downloads
             try:
                 # Download Video
                 video_path = hf_hub_download(
@@ -269,11 +270,11 @@ class VideoDataset(torch.utils.data.Dataset):
         
         # 🔥 Run Phase 2 Captioning if enabled
         if config.get("use_ai_captioning", True):
-            self.local_pairs = caption_videos_with_blip(downloaded_pairs, config)
+            self.local_pairs = caption_videos_with_blip(downloaded_pairs[:2], config) # 🧪 TEST MODE: Only 2 items
         else:
-            self.local_pairs = downloaded_pairs
+            self.local_pairs = downloaded_pairs[:2] # 🧪 TEST MODE: Only 2 items
             
-        print(f"✅ Prepared {len(self.local_pairs)} pairs for training")
+        print(f"✅ Prepared {len(self.local_pairs)} pairs for training (TEST MODE)")
     
     def __len__(self):
         return len(self.local_pairs)
