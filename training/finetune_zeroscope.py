@@ -61,7 +61,7 @@ CONFIG = {
     "fps": 8,
     
     # Monitoring
-    "use_wandb": False,
+    "use_wandb": True,
     "wandb_project": "adeydreamgen-v1",
     
     # Checkpointing & Deployment
